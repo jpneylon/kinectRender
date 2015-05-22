@@ -5,16 +5,12 @@ int iDivUp( int a, int b );
 
 
 extern "C"
-void updateVRenderColorMaps( Cloud * cloud, unsigned char cycle, float *fps );
+void allocateMemory( Cloud *cloud, int device, cudaExtent volumeSize, uint imageW, uint imageH );
 
 
 extern "C"
-void createVRenderColorMaps( Cloud * cloud );
+void updateVRenderColorMaps( Cloud * cloud );
 
-
-extern "C"
-    void initializeVRender( cudaExtent volumeSize,
-                            uint imageW, uint imageH );
 
 extern "C"
     void freeCudaBuffers();

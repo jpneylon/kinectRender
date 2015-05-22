@@ -188,20 +188,17 @@ VRender::transformModelViewMatrix()
     delete [] matrix;
 }
 
+void
+VRender::update_color_maps( Cloud *cloud )
+{
+    updateVRenderColorMaps( cloud );
+}
 
 void
 VRender::render( Cloud *cloud )
 {
     fps_frames[fps_idx] = 0;
 
-    if (frame_counter % 100 == 0)
-    {
-        cycle = (cycle + 1) % 3;
-        updateVRenderColorMaps( cloud, cycle, &fps_frames[fps_idx] );
-        frame_counter = 0;
-    }
-
-    swap = (frame_counter % 2) * width * height;
     render_kernel( gridSize, blockSize, render_buf, width, height, density, brightness, transferOffset, transferScale, &fps_frames[fps_idx] );
 
     float time = fps_frames[0];
@@ -220,18 +217,17 @@ VRender::get_vrender_buffer( Cloud *cloud )
     return (render_buf);
 }
 
-int
-VRender::init_vrender( Cloud *cloud)
-{
-    createVRenderColorMaps( cloud );
 
+void
+VRender::allocate_memory( Cloud *cloud, int device )
+{
     volumeSize.width = cloud->world.size.x;
     volumeSize.height = cloud->world.size.y;
     volumeSize.depth = cloud->world.size.z;
 
     render_buf = new unsigned char[ height * width * 3 ];
 
-    initializeVRender( volumeSize, width, height );
+    allocateMemory( cloud, device, volumeSize, width, height );
 
     gridSize = dim3( iDivUp(width, blockSize.x), iDivUp(height, blockSize.y) );
 
@@ -244,9 +240,6 @@ VRender::init_vrender( Cloud *cloud)
     memcpy( modelViewMatrix, identityMatrix, 16 * sizeof(float ) );
     transformModelViewMatrix();
     setInvViewMatrix();
-    render( cloud );
-
-    return 1;
 }
 
 

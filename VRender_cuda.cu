@@ -17,157 +17,30 @@ void computeGridSize(uint n, uint blockSize, uint &numBlocks, uint &numThreads)
 
 
 extern "C"
-void updateVRenderColorMaps( Cloud * cloud, unsigned char cycle, float *fps )
+void allocateMemory( Cloud *cloud, int device, cudaExtent volumeSize, uint imageW, uint imageH )
 {
-    float cudatime;
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start, 0);
-
-    std::copy( cloud->position.begin(), cloud->position.end(), h_pos );
-    checkCudaErrors( cudaMemcpy( d_pos, h_pos, cloud->position.size() * sizeof(float3), cudaMemcpyHostToDevice ) );
-
-    std::copy( cloud->rgb.begin(), cloud->rgb.end(), h_color );
-    checkCudaErrors( cudaMemcpy( d_color, h_color, cloud->rgb.size() * sizeof(uint3), cudaMemcpyHostToDevice ) );
-
-    uint numThreads, numBlocks;
-    computeGridSize( cloud->pcl.count, 256, numBlocks, numThreads);
-
-    checkCudaErrors( cudaMemset( gridHash, 0, cloud->pcl.count * sizeof(uint) ) );
-    checkCudaErrors( cudaMemset( gridIndex, 0, cloud->pcl.count * sizeof(uint) ) );
-
-    calcHashD<<< numBlocks, numThreads >>>( gridHash,
-                                            gridIndex,
-                                            d_pos );
-
-    cudaThreadSynchronize();
-    thrust::sort_by_key(thrust::device_ptr<uint>(gridHash),
-                            thrust::device_ptr<uint>(gridHash + cloud->pcl.count),
-                            thrust::device_ptr<uint>(gridIndex));
-
-    checkCudaErrors( cudaMemset( cellStart, 0xffffffff, cloud->world.count * sizeof(uint) ) );
-    checkCudaErrors( cudaMemset( cellEnd, 0xffffffff, cloud->world.count * sizeof(uint) ) );
-
-    uint smemSize = sizeof(uint)*(numThreads+1);
-    reorderDataAndFindCellStartD<<< numBlocks, numThreads, smemSize>>>( cellStart,
-                                                                        cellEnd,
-                                                                        gridHash,
-                                                                        gridIndex );
-
-    cudaThreadSynchronize();
-    cuda_create_color_maps<<< numBlocks, numThreads >>> ( d_pos,
-                                                          d_color,
-                                                          gridIndex,
-                                                          cellStart,
-                                                          cellEnd,
-                                                          d_red,
-                                                          d_green,
-                                                          d_blue,
-                                                          cycle );
-    cudaThreadSynchronize();
-
-    checkCudaErrors( cudaMemcpy3D( &redParams ) );
-    checkCudaErrors( cudaMemcpy3D( &greenParams ) );
-    checkCudaErrors( cudaMemcpy3D( &blueParams ) );
-
-    cudaEventRecord( stop, 0 );
-    cudaEventSynchronize( stop );
-    cudaEventElapsedTime( &cudatime, start, stop );
-    *fps += cudatime / 1000.f;
-}
-
-extern "C"
-void createVRenderColorMaps( Cloud * cloud )
-{
-    cudaSetDevice(1);
+    cudaSetDevice(device);
 
     float cudatime;
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     cudaEventRecord(start, 0);
-
-    checkCudaErrors( cudaMalloc( (void**) &d_red, cloud->world.count ) );
-    checkCudaErrors( cudaMalloc( (void**) &d_green, cloud->world.count ) );
-    checkCudaErrors( cudaMalloc( (void**) &d_blue, cloud->world.count ) );
-
-    checkCudaErrors( cudaMemset( d_red, 0, cloud->world.count ) );
-    checkCudaErrors( cudaMemset( d_green, 0, cloud->world.count ) );
-    checkCudaErrors( cudaMemset( d_blue, 0, cloud->world.count ) );
-
-    h_pos = new float3[cloud->position.size()];
-    std::copy( cloud->position.begin(), cloud->position.end(), h_pos );
-
-    checkCudaErrors( cudaMalloc( (void**) &d_pos, cloud->position.size() * sizeof(float3) ) );
-    checkCudaErrors( cudaMemcpy( d_pos, h_pos, cloud->position.size() * sizeof(float3), cudaMemcpyHostToDevice ) );
-
-    h_color = new uint3[cloud->rgb.size()];
-    std::copy( cloud->rgb.begin(), cloud->rgb.end(), h_color );
-
-    checkCudaErrors( cudaMalloc( (void**) &d_color, cloud->rgb.size() * sizeof(uint3) ) );
-    checkCudaErrors( cudaMemcpy( d_color, h_color, cloud->rgb.size() * sizeof(uint3), cudaMemcpyHostToDevice ) );
-
-    checkCudaErrors( cudaMemcpyToSymbol( d_pcl, &cloud->pcl, sizeof(PCListData) ) );
-    checkCudaErrors( cudaMemcpyToSymbol( d_world, &cloud->world, sizeof(WORLD) ) );
-
-    uint numThreads, numBlocks;
-    computeGridSize( cloud->pcl.count, 256, numBlocks, numThreads);
-
-    checkCudaErrors( cudaMalloc( (void**) &gridHash, cloud->pcl.count * sizeof(uint) ) );
-    checkCudaErrors( cudaMalloc( (void**) &gridIndex, cloud->pcl.count * sizeof(uint) ) );
-    checkCudaErrors( cudaMemset( gridHash, 0, cloud->pcl.count * sizeof(uint) ) );
-    checkCudaErrors( cudaMemset( gridIndex, 0, cloud->pcl.count * sizeof(uint) ) );
-
-    calcHashD<<< numBlocks, numThreads >>>( gridHash,
-                                            gridIndex,
-                                            d_pos );
-
-    cudaThreadSynchronize();
-    thrust::sort_by_key(thrust::device_ptr<uint>(gridHash),
-                            thrust::device_ptr<uint>(gridHash + cloud->pcl.count),
-                            thrust::device_ptr<uint>(gridIndex));
 
     checkCudaErrors( cudaMalloc( (void**) &cellStart, cloud->world.count * sizeof(uint) ) );
     checkCudaErrors( cudaMalloc( (void**) &cellEnd, cloud->world.count * sizeof(uint) ) );
     checkCudaErrors( cudaMemset( cellStart, 0xffffffff, cloud->world.count * sizeof(uint) ) );
     checkCudaErrors( cudaMemset( cellEnd, 0xffffffff, cloud->world.count * sizeof(uint) ) );
 
-    uint smemSize = sizeof(uint)*(numThreads+1);
-    reorderDataAndFindCellStartD<<< numBlocks, numThreads, smemSize>>>( cellStart,
-                                                                        cellEnd,
-                                                                        gridHash,
-                                                                        gridIndex );
+    checkCudaErrors( cudaMalloc( (void**) &d_red, cloud->world.count ) );
+    checkCudaErrors( cudaMalloc( (void**) &d_green, cloud->world.count ) );
+    checkCudaErrors( cudaMalloc( (void**) &d_blue, cloud->world.count ) );
+    checkCudaErrors( cudaMemset( d_red, 0, cloud->world.count ) );
+    checkCudaErrors( cudaMemset( d_green, 0, cloud->world.count ) );
+    checkCudaErrors( cudaMemset( d_blue, 0, cloud->world.count ) );
 
-    cudaThreadSynchronize();
-    cuda_create_color_maps<<< numBlocks, numThreads >>> ( d_pos,
-                                                          d_color,
-                                                          gridIndex,
-                                                          cellStart,
-                                                          cellEnd,
-                                                          d_red,
-                                                          d_green,
-                                                          d_blue,
-                                                          0 );
-    cudaThreadSynchronize();
-
-    cudaEventRecord( stop, 0 );
-    cudaEventSynchronize( stop );
-    cudaEventElapsedTime( &cudatime, start, stop );
-    printf("\n ||| TIME - Create Color Maps: %f ms\n", cudatime);
-}
-
-
-extern "C"
-void initializeVRender( cudaExtent      volumeSize,
-                        uint            imageW,
-                        uint            imageH )
-{
-    float cudatime;
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start, 0);
+    checkCudaErrors( cudaMemcpyToSymbol( d_pcl, &cloud->pcl, sizeof(PCListData) ) );
+    checkCudaErrors( cudaMemcpyToSymbol( d_world, &cloud->world, sizeof(WORLD) ) );
 
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<uchar>();
 
@@ -226,13 +99,94 @@ void initializeVRender( cudaExtent      volumeSize,
     cudaEventRecord( stop, 0 );
     cudaEventSynchronize( stop );
     cudaEventElapsedTime( &cudatime, start, stop );
-    printf("\n ||| TIME - Initalize GPU Memory: %f ms\n", cudatime);
+    printf("\n ||| TIME - GPU Memory Allocation: %f ms\n", cudatime);
+}
+
+
+
+extern "C"
+void updateVRenderColorMaps( Cloud * cloud )
+{
+    float cudatime;
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0);
+
+    h_pos = new float3[cloud->position.size()];
+    h_color = new uint3[cloud->rgb.size()];
+
+    checkCudaErrors( cudaMalloc( (void**) &d_pos, cloud->pcl.count * sizeof(float3) ) );
+    checkCudaErrors( cudaMalloc( (void**) &d_color, cloud->pcl.count * sizeof(uint3) ) );
+
+    std::copy( cloud->position.begin(), cloud->position.end(), h_pos );
+    checkCudaErrors( cudaMemcpy( d_pos, h_pos, cloud->position.size() * sizeof(float3), cudaMemcpyHostToDevice ) );
+
+    std::copy( cloud->rgb.begin(), cloud->rgb.end(), h_color );
+    checkCudaErrors( cudaMemcpy( d_color, h_color, cloud->rgb.size() * sizeof(uint3), cudaMemcpyHostToDevice ) );
+
+    uint numThreads, numBlocks;
+    computeGridSize( cloud->pcl.count, 256, numBlocks, numThreads);
+
+    checkCudaErrors( cudaMalloc( (void**) &gridHash, cloud->pcl.count * sizeof(uint) ) );
+    checkCudaErrors( cudaMalloc( (void**) &gridIndex, cloud->pcl.count * sizeof(uint) ) );
+
+    checkCudaErrors( cudaMemset( gridHash, 0, cloud->pcl.count * sizeof(uint) ) );
+    checkCudaErrors( cudaMemset( gridIndex, 0, cloud->pcl.count * sizeof(uint) ) );
+
+    calcHashD<<< numBlocks, numThreads >>>( gridHash,
+                                            gridIndex,
+                                            d_pos );
+
+    cudaThreadSynchronize();
+    thrust::sort_by_key(thrust::device_ptr<uint>(gridHash),
+                            thrust::device_ptr<uint>(gridHash + cloud->pcl.count),
+                            thrust::device_ptr<uint>(gridIndex));
+
+    checkCudaErrors( cudaMemset( cellStart, 0xffffffff, cloud->world.count * sizeof(uint) ) );
+    checkCudaErrors( cudaMemset( cellEnd, 0xffffffff, cloud->world.count * sizeof(uint) ) );
+
+    uint smemSize = sizeof(uint)*(numThreads+1);
+    reorderDataAndFindCellStartD<<< numBlocks, numThreads, smemSize>>>( cellStart,
+                                                                        cellEnd,
+                                                                        gridHash,
+                                                                        gridIndex );
+
+    cudaThreadSynchronize();
+    cuda_create_color_maps<<< numBlocks, numThreads >>> ( d_pos,
+                                                          d_color,
+                                                          gridIndex,
+                                                          cellStart,
+                                                          cellEnd,
+                                                          d_red,
+                                                          d_green,
+                                                          d_blue );
+    cudaThreadSynchronize();
+
+    checkCudaErrors( cudaMemcpy3D( &redParams ) );
+    checkCudaErrors( cudaMemcpy3D( &greenParams ) );
+    checkCudaErrors( cudaMemcpy3D( &blueParams ) );
+
+    checkCudaErrors( cudaFree( d_pos ) );
+    checkCudaErrors( cudaFree( d_color ) );
+    checkCudaErrors( cudaFree( gridHash ) );
+    checkCudaErrors( cudaFree( gridIndex ) );
+
+    delete [] h_pos;
+    delete [] h_color;
+
+    cudaEventRecord( stop, 0 );
+    cudaEventSynchronize( stop );
+    cudaEventElapsedTime( &cudatime, start, stop );
 }
 
 
 extern "C"
 void freeCudaBuffers()
 {
+    checkCudaErrors( cudaFree( cellEnd ) );
+    checkCudaErrors( cudaFree( cellStart ) );
+
     checkCudaErrors( cudaUnbindTexture(texRed) );
     checkCudaErrors( cudaFreeArray(d_redArray) );
 
@@ -247,16 +201,6 @@ void freeCudaBuffers()
     checkCudaErrors( cudaFree( d_blue ) );
 
     checkCudaErrors( cudaFree( d_volume ) );
-
-    checkCudaErrors( cudaFree( d_pos ) );
-    checkCudaErrors( cudaFree( d_color ) );
-    checkCudaErrors( cudaFree( cellEnd ) );
-    checkCudaErrors( cudaFree( cellStart ) );
-    checkCudaErrors( cudaFree( gridHash ) );
-    checkCudaErrors( cudaFree( gridIndex ) );
-
-    delete [] h_pos;
-    delete [] h_color;
 }
 
 

@@ -42,6 +42,9 @@ VR_Window::VR_Window()
 
 VR_Window::~VR_Window()
 {
+    server_socket->close_socket();
+    server_socket->close_new_socket();
+    delete server_socket;
     delete vrender;
     delete cloud;
     hide();
@@ -131,6 +134,118 @@ VR_Window::open_file()
     {
         printf("\n Could not open file: %s", point_cloud_list_file);
     }
+}
+
+void
+VR_Window::read_socket_connection()
+{
+    // receive depth data
+    server_socket->read_server_socket( tcp_instruction, 2*sizeof(int) );
+    int datasize = tcp_instruction[1];
+    float *buffer_ptr;
+    buffer_ptr = new float[datasize];
+    server_socket->receive_data_server_socket( buffer_ptr, datasize * sizeof(float) );
+
+    // receive rgb data
+    server_socket->read_server_socket( tcp_instruction, 2*sizeof(int) );
+    int rgbsize = tcp_instruction[1];
+    unsigned char *rgb_ptr;
+    rgb_ptr = new unsigned char[rgbsize];
+    server_socket->receive_data_server_socket( rgb_ptr, rgbsize );
+
+    float *s;
+    unsigned char *t;
+    s = reinterpret_cast<float *>(buffer_ptr);
+    t = reinterpret_cast<unsigned char *>(rgb_ptr);
+
+    float *dataPack;
+    dataPack = new float[datasize];
+
+	unsigned char *dataPackColor;
+	dataPackColor = new unsigned char[rgbsize];
+
+    for (int i = 0; i < rgbsize; i++)
+    {
+            dataPack[i] = *(s+i);
+            dataPackColor[i] = *(t+i);
+    }
+
+    int numItem = datasize / 3;
+
+    cloud->pcl.count = numItem;
+    cloud->position.clear();
+    cloud->rgb.clear();
+
+    cloud->pcl.max.x = -999999;
+    cloud->pcl.max.y = -999999;
+    cloud->pcl.max.z = -999999;
+    cloud->pcl.min.x = 999999;
+    cloud->pcl.min.y = 999999;
+    cloud->pcl.min.z = 999999;
+
+    for (int idx = 0; idx < numItem; idx++)
+    {
+        float3 position;
+        position.x = dataPack[idx*3];
+        position.y = dataPack[idx*3+1];
+        position.z = dataPack[idx*3+2];
+
+        uint3 rgb;
+        rgb.x = dataPackColor[idx*3+2];
+        rgb.y = dataPackColor[idx*3+1];
+        rgb.z = dataPackColor[idx*3];
+
+        if ( position.x > cloud->world.min.x && position.x < cloud->world.max.x
+             && position.y > cloud->world.min.y && position.y < cloud->world.max.y
+             && position.z > cloud->world.min.z && position.z < cloud->world.max.z )
+        {
+            if (position.x > cloud->pcl.max.x) cloud->pcl.max.x = position.x;
+            if (position.x < cloud->pcl.min.x) cloud->pcl.min.x = position.x;
+
+            if (position.y > cloud->pcl.max.y) cloud->pcl.max.y = position.y;
+            if (position.y < cloud->pcl.min.y) cloud->pcl.min.y = position.y;
+
+            if (position.z > cloud->pcl.max.z) cloud->pcl.max.z = position.z;
+            if (position.z < cloud->pcl.min.z) cloud->pcl.min.z = position.z;
+
+            cloud->position.push_back(position);
+            cloud->rgb.push_back(rgb);
+        }
+    }
+    printf("\n %d points read from file", cloud->pcl.count );
+
+    printf("\n PCList Maximum: %f %f %f", cloud->pcl.max.x, cloud->pcl.max.y, cloud->pcl.max.z );
+    printf("\n PCList Minimum: %f %f %f", cloud->pcl.min.x, cloud->pcl.min.y, cloud->pcl.min.z );
+
+    cloud->pcl.dimension.x = abs( cloud->pcl.max.x - cloud->pcl.min.x );
+    cloud->pcl.dimension.y = abs( cloud->pcl.max.y - cloud->pcl.min.y );
+    cloud->pcl.dimension.z = abs( cloud->pcl.max.z - cloud->pcl.min.z );
+    printf("\n PCList Dimensions: %f %f %f\n", cloud->pcl.dimension.x, cloud->pcl.dimension.y, cloud->pcl.dimension.z );
+
+    delete [] dataPack;
+    delete [] dataPackColor;
+    delete [] buffer_ptr;
+    delete [] rgb_ptr;
+
+    tcp_instruction[0] = COMMAND_ACK;
+    tcp_instruction[1] = 0;
+    server_socket->write_server_socket( tcp_instruction, 2*sizeof(int) );
+}
+void
+VR_Window::open_socket_connection()
+{
+    // open server socket
+    server_socket = new CS_Socket;
+    server_socket->set_port_number(0);
+    server_socket->open_server_socket();
+    server_socket->listen_server_socket();
+
+    tcp_instruction[0] = COMMAND_ACK;
+    tcp_instruction[1] = 0;
+
+    server_socket->write_server_socket( tcp_instruction, 2*sizeof(int) );
+
+    read_socket_connection();
 }
 void
 VR_Window::print_file()
@@ -277,11 +392,43 @@ VR_Window::render_motion_notify_event(GdkEventMotion *event)
 }
 
 
+bool
+VR_Window::on_timer()
+{
+    // TCP
+    bool client_ready = server_socket->check_for_available_data();
+
+    if (client_ready)
+    {
+        read_socket_connection();
+        vrender->update_color_maps( cloud );
+    }
+}
+bool
+VR_Window::on_idle()
+{
+    // TCP
+    bool client_ready = server_socket->check_for_available_data();
+
+    if (client_ready)
+    {
+        read_socket_connection();
+        vrender->update_color_maps( cloud );
+    }
+}
+
+
+void
+VR_Window::initialize_vrender()
+{
+    vrender->allocate_memory( cloud, 1 );
+    vrender->update_color_maps( cloud );
+}
+
+
 void
 VR_Window::create_render_window()
 {
-    vrender->init_vrender( cloud );
-
     Gtk::Box *render_vbox = new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 1);
 
     Gtk::ScrolledWindow *render_scroll;
@@ -376,6 +523,9 @@ VR_Window::create_render_window()
     scale_scale->set_digits(2);
     param_hbox2->pack_start(scale_scale[0], true, true, 0);
     render_vbox->pack_start(param_hbox2[0], false, false, 0);
+
+    Glib::signal_idle().connect( sigc::mem_fun( *this, &VR_Window::on_idle) );
+    //Glib::signal_timeout().connect( sigc::mem_fun(*this, &VR_Window::on_timer), 50 );
 
     pack_start(render_vbox[0], true, true, 0);
     show_all_children();

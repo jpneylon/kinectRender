@@ -5,17 +5,6 @@
 
 int main(int argc, char *argv[])
 {
-    if (checkCmdLineFlag(argc, (const char **)argv, "help"))
-    {
-        printf("\n USAGE:");
-        printf("\n   -pc-file='file path' to file containing point cloud list of points");
-        printf("\n                        file should have format: x y z r g b");
-        printf("\n                        where point coordinates xyz are floats");
-        printf("\n                        and point color channels rgb are 8 bit integers (0-255)");
-        printf("\n\n");
-        return 0;
-    }
-
     Glib::RefPtr<Gtk::Application> app = Gtk::Application::create( argc, argv, "jacko.pc_render" );
     PC_Render pc_render;
     return app->run(pc_render);
@@ -126,7 +115,8 @@ PC_Render::file_open()
     if (!renderer_open)
     {
         vr_window = new VR_Window;
-        vr_window->open_file();
+        vr_window->open_socket_connection();
+        vr_window->initialize_vrender();
         viewBox.pack_start( *vr_window );
         cwdLabel.set_text( vr_window->get_file_name() );
         vr_window->create_render_window();

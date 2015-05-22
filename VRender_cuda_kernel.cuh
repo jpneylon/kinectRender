@@ -274,8 +274,7 @@ void cuda_create_color_maps( float3 *pos,
                              uint   *cellEnd,
                              uchar  *red,
                              uchar  *green,
-                             uchar  *blue,
-                             uchar  cycle )
+                             uchar  *blue )
 {
     uint tid = __umul24(blockIdx.x,blockDim.x) + threadIdx.x;
     if (tid >= d_pcl.count) return;
@@ -290,29 +289,21 @@ void cuda_create_color_maps( float3 *pos,
         uint endIndex = cellEnd[hash];
         float point_count = __int2float_rn( endIndex - startIndex );
 
-        float rgb[3];
-        rgb[0] = 0;
-        rgb[1] = 0;
-        rgb[2] = 0;
-
-        uchar cid[3];
-        cid[0] = cycle;
-        cid[1] = (cycle + 1) % 3;
-        cid[2] = (cycle + 2) % 3;
+        float3 rgb = make_float3( 0 );
 
         for (uint p=startIndex; p<endIndex; p++)
         {
             uint point = gridIndex[p];
             uint3 c = color[point];
 
-            rgb[ cid[0] ] += __int2float_rn(c.x);
-            rgb[ cid[1] ] += __int2float_rn(c.y);
-            rgb[ cid[2] ] += __int2float_rn(c.z);
+            rgb.x += __int2float_rn(c.x);
+            rgb.y += __int2float_rn(c.y);
+            rgb.z += __int2float_rn(c.z);
         }
 
-        red[hash] = __float2int_rn( rgb[0] / point_count );
-        green[hash] = __float2int_rn( rgb[1] / point_count );
-        blue[hash] = __float2int_rn (rgb[2] / point_count );
+        red[hash] = __float2int_rn( rgb.x / point_count );
+        green[hash] = __float2int_rn( rgb.y / point_count );
+        blue[hash] = __float2int_rn (rgb.z / point_count );
     }
 }
 

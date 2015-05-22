@@ -4,6 +4,7 @@
 #include <vector>
 
 
+
 typedef struct{
     uint count;
     float3 max;

@@ -14,8 +14,8 @@
 
 #define PI 3.14159f
 #define BUFFER_SIZE 512
-#define FPS_SIZE 1
-#define RENDER_RESOLUTION 4
+#define FPS_SIZE 10
+#define RENDER_RESOLUTION 8
 
 
 class VRender
@@ -33,8 +33,8 @@ class VRender
         void set_vrender_translation( float dx, float dy );
         void set_vrender_zoom( float dy );
 
-        int init_vrender( Cloud *cloud );
-
+        void update_color_maps( Cloud *cloud );
+        void allocate_memory( Cloud *cloud, int device );
 
         int get_width()
         {
@@ -104,7 +104,6 @@ class VRender
 
     protected:
        //functions
-        void create_color_maps( Cloud *cloud );
         void setInvViewMatrix();
         void render( Cloud *cloud );
 

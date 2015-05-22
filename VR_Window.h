@@ -2,14 +2,28 @@
 #define __VR_WINDOW_CLASS_H__
 
 #include <gtkmm.h>
-
+#include <sys/mman.h>
+#include <assert.h>
 #include <time.h>
+
 #include "VRender.h"
+#include "socket_class.h"
 
 #define STARTDIR "/home/anand/code/data"
 #define MAX_VOLUME_SIDE 256
 #define MASK_BONUS 16
 #define MAX_RADIUS 1
+
+
+
+
+typedef struct ipcBarrier_st
+{
+    int count;
+    bool sense;
+    bool allExit;
+} ipcBarrier_t;
+
 
 
 class VR_Window : public Gtk::Box
@@ -19,14 +33,17 @@ class VR_Window : public Gtk::Box
     virtual ~VR_Window();
 
     void open_file();
+    void open_socket_connection();
     void print_file();
     char *get_file_name() { return point_cloud_list_file; };
-
+    void initialize_vrender();
     void create_render_window();
 
   private:
-
+    bool on_idle();
+    bool on_timer();
     void select_file();
+    void read_socket_connection();
     void update_render_buffer();
     void set_render_density();
     void set_render_brightness();
@@ -38,9 +55,11 @@ class VR_Window : public Gtk::Box
     virtual bool render_button_press_event(GdkEventButton *event);
     virtual bool render_motion_notify_event(GdkEventMotion *event);
 
+    CS_Socket *server_socket;
     VRender *vrender;
     Cloud *cloud;
 
+    int tcp_instruction[2]; // [0]: instruction type [1]: data size
     float3 volume_origin;
 
     char *point_cloud_list_file;
