@@ -107,30 +107,22 @@ void allocateMemory( Cloud *cloud, int device, cudaExtent volumeSize, uint image
 extern "C"
 void updateVRenderColorMaps( Cloud * cloud )
 {
-    float cudatime;
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start, 0);
+    checkCudaErrors( cudaMemcpyToSymbol( d_pcl, &cloud->pcl, sizeof(PCListData) ) );
 
-    h_pos = new float3[cloud->position.size()];
-    h_color = new uint3[cloud->rgb.size()];
-
+    h_pos = new float3[cloud->pcl.count];
+    h_color = new uint3[cloud->pcl.count];
     checkCudaErrors( cudaMalloc( (void**) &d_pos, cloud->pcl.count * sizeof(float3) ) );
     checkCudaErrors( cudaMalloc( (void**) &d_color, cloud->pcl.count * sizeof(uint3) ) );
-
     std::copy( cloud->position.begin(), cloud->position.end(), h_pos );
-    checkCudaErrors( cudaMemcpy( d_pos, h_pos, cloud->position.size() * sizeof(float3), cudaMemcpyHostToDevice ) );
-
+    checkCudaErrors( cudaMemcpy( d_pos, h_pos, cloud->pcl.count * sizeof(float3), cudaMemcpyHostToDevice ) );
     std::copy( cloud->rgb.begin(), cloud->rgb.end(), h_color );
-    checkCudaErrors( cudaMemcpy( d_color, h_color, cloud->rgb.size() * sizeof(uint3), cudaMemcpyHostToDevice ) );
+    checkCudaErrors( cudaMemcpy( d_color, h_color, cloud->pcl.count * sizeof(uint3), cudaMemcpyHostToDevice ) );
 
     uint numThreads, numBlocks;
     computeGridSize( cloud->pcl.count, 256, numBlocks, numThreads);
 
     checkCudaErrors( cudaMalloc( (void**) &gridHash, cloud->pcl.count * sizeof(uint) ) );
     checkCudaErrors( cudaMalloc( (void**) &gridIndex, cloud->pcl.count * sizeof(uint) ) );
-
     checkCudaErrors( cudaMemset( gridHash, 0, cloud->pcl.count * sizeof(uint) ) );
     checkCudaErrors( cudaMemset( gridIndex, 0, cloud->pcl.count * sizeof(uint) ) );
 
@@ -138,7 +130,9 @@ void updateVRenderColorMaps( Cloud * cloud )
                                             gridIndex,
                                             d_pos );
 
-    cudaThreadSynchronize();
+    cudaDeviceSynchronize();
+    getLastCudaError("Kernel execution failed");
+
     thrust::sort_by_key(thrust::device_ptr<uint>(gridHash),
                             thrust::device_ptr<uint>(gridHash + cloud->pcl.count),
                             thrust::device_ptr<uint>(gridIndex));
@@ -152,7 +146,13 @@ void updateVRenderColorMaps( Cloud * cloud )
                                                                         gridHash,
                                                                         gridIndex );
 
-    cudaThreadSynchronize();
+    cudaDeviceSynchronize();
+    getLastCudaError("Kernel execution failed");
+
+
+    checkCudaErrors( cudaMemset( d_red, 0, cloud->world.count ) );
+    checkCudaErrors( cudaMemset( d_green, 0, cloud->world.count ) );
+    checkCudaErrors( cudaMemset( d_blue, 0, cloud->world.count ) );
     cuda_create_color_maps<<< numBlocks, numThreads >>> ( d_pos,
                                                           d_color,
                                                           gridIndex,
@@ -161,7 +161,8 @@ void updateVRenderColorMaps( Cloud * cloud )
                                                           d_red,
                                                           d_green,
                                                           d_blue );
-    cudaThreadSynchronize();
+    cudaDeviceSynchronize();
+    getLastCudaError("Kernel execution failed");
 
     checkCudaErrors( cudaMemcpy3D( &redParams ) );
     checkCudaErrors( cudaMemcpy3D( &greenParams ) );
@@ -174,10 +175,6 @@ void updateVRenderColorMaps( Cloud * cloud )
 
     delete [] h_pos;
     delete [] h_color;
-
-    cudaEventRecord( stop, 0 );
-    cudaEventSynchronize( stop );
-    cudaEventElapsedTime( &cudatime, start, stop );
 }
 
 
@@ -227,7 +224,7 @@ void render_kernel( dim3 gridSize, dim3 blockSize,
     cudaEventRecord( stop, 0 );
     cudaEventSynchronize( stop );
     cudaEventElapsedTime( &cudatime, start, stop );
-    *fps += cudatime / 1000.f;
+    *fps = cudatime;
 }
 
 

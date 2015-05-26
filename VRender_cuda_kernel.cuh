@@ -3,9 +3,9 @@
 #include <helper_cuda.h>
 #include <helper_math.h>
 
-#define tstep       0.005f
+#define tstep       0.01f
 #define maxSteps    500
-#define opacity     0.95f
+#define maxOpacity     0.95f
 
 typedef unsigned char uchar;
 
@@ -21,7 +21,6 @@ uint *gridHash, *gridIndex;
 
 uchar *d_volume;
 uchar *d_red, *d_green, *d_blue;
-
 
 cudaArray *d_redArray = 0;
 cudaArray *d_blueArray = 0;
@@ -125,7 +124,7 @@ float4 get_pix_val( Ray eyeRay, float tnear, float tfar,
         sum += col * (1.f - sum.w);
 
         // exit early if opaque
-        if (sum.w > opacity)
+        if (sum.w > maxOpacity)
             break;
 
         t += tstep;
@@ -193,9 +192,9 @@ void d_render( unsigned char *d_output,
 __device__ int3 calcGridPos(float3 p)
 {
     int3 gridPos;
-    gridPos.x = floor((p.x - d_world.min.x) / d_world.resolution.x);
-    gridPos.y = floor((p.y - d_world.min.y) / d_world.resolution.y);
-    gridPos.z = floor((p.z - d_world.min.z) / d_world.resolution.z);
+    gridPos.x = floor((p.x - d_world.min.x) / d_world.resolution.x + 0.5);
+    gridPos.y = floor((p.y - d_world.min.y) / d_world.resolution.y + 0.5);
+    gridPos.z = floor((p.z - d_world.min.z) / d_world.resolution.z + 0.5);
     return gridPos;
 }
 __device__ uint calcGridHash(int3 gridPos)

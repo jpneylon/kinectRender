@@ -197,17 +197,13 @@ VRender::update_color_maps( Cloud *cloud )
 void
 VRender::render( Cloud *cloud )
 {
-    fps_frames[fps_idx] = 0;
-
     render_kernel( gridSize, blockSize, render_buf, width, height, density, brightness, transferOffset, transferScale, &fps_frames[fps_idx] );
 
     float time = fps_frames[0];
     for (uint f = 1; f < FPS_SIZE; f++)
         time += fps_frames[f];
-    sprintf(fps_text,"%f", FPS_SIZE / time );
+    sprintf(fps_text,"%f", time / FPS_SIZE );
     fps_idx = (fps_idx + 1) % FPS_SIZE;
-
-    frame_counter++;
 }
 
 unsigned char *

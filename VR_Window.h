@@ -2,6 +2,7 @@
 #define __VR_WINDOW_CLASS_H__
 
 #include <gtkmm.h>
+#include <sys/time.h>
 #include <sys/mman.h>
 #include <assert.h>
 #include <time.h>
@@ -10,10 +11,10 @@
 #include "socket_class.h"
 
 #define STARTDIR "/home/anand/code/data"
-#define MAX_VOLUME_SIDE 256
+#define MAX_VOLUME_SIDE 300
 #define MASK_BONUS 16
 #define MAX_RADIUS 1
-
+#define TIMER_SIZE 100
 
 
 
@@ -42,6 +43,7 @@ class VR_Window : public Gtk::Box
   private:
     bool on_idle();
     bool on_timer();
+    void on_click();
     void select_file();
     void read_socket_connection();
     void update_render_buffer();
@@ -49,6 +51,7 @@ class VR_Window : public Gtk::Box
     void set_render_brightness();
     void set_render_offset();
     void set_render_scale();
+    void update_socket_data();
     void update_render_zoom(gdouble x, gdouble y);
     void update_render_translation(gdouble x, gdouble y);
     void update_render_rotation(gdouble x, gdouble y);
@@ -65,11 +68,16 @@ class VR_Window : public Gtk::Box
     char *point_cloud_list_file;
     bool pc_file_open;
     bool adaptive_world_sizing;
+    double socket_timer[TIMER_SIZE];
+    int socket_timer_idx;
 
     Gtk::Image      render_image;
     Gtk::Label      fps_update;
+    Gtk::Label      socket_update;
     Gtk::Label      fps_label;
+    Gtk::Label      socket_label;
     Gtk::Box        fps_box;
+    Gtk::Box        socket_box;
 
     Glib::RefPtr<Gtk::Adjustment>     dens_adjust;
     Glib::RefPtr<Gtk::Adjustment>     bright_adjust;

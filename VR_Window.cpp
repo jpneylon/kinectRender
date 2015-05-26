@@ -9,7 +9,7 @@ VR_Window::VR_Window()
     pc_file_open = false;
 
     vrender = new VRender;
-    volume_origin = make_float3( 0.6, 0, 0 );
+    volume_origin = make_float3( 0.5, 0, 0 );
 
     cloud = new Cloud;
 
@@ -38,6 +38,8 @@ VR_Window::VR_Window()
     printf("\n World Maximum: %f %f %f\n", cloud->world.max.x, cloud->world.max.y, cloud->world.max.z );
 
     adaptive_world_sizing = false;
+    socket_timer_idx = 0;
+    memset( socket_timer, 0, TIMER_SIZE * sizeof(double) );
 }
 
 VR_Window::~VR_Window()
@@ -141,13 +143,15 @@ VR_Window::read_socket_connection()
 {
     // receive depth data
     server_socket->read_server_socket( tcp_instruction, 2*sizeof(int) );
+    //printf("\n Read from socket: tcp[0] = %d, tcp[1] = %d", tcp_instruction[0], tcp_instruction[1] );
     int datasize = tcp_instruction[1];
     float *buffer_ptr;
     buffer_ptr = new float[datasize];
-    server_socket->receive_data_server_socket( buffer_ptr, datasize * sizeof(float) );
+    server_socket->receive_data_server_socket( buffer_ptr, datasize );
 
     // receive rgb data
     server_socket->read_server_socket( tcp_instruction, 2*sizeof(int) );
+    //printf("\n Read from socket: tcp[0] = %d, tcp[1] = %d", tcp_instruction[0], tcp_instruction[1] );
     int rgbsize = tcp_instruction[1];
     unsigned char *rgb_ptr;
     rgb_ptr = new unsigned char[rgbsize];
@@ -172,10 +176,9 @@ VR_Window::read_socket_connection()
 
     int numItem = datasize / 3;
 
-    cloud->pcl.count = numItem;
+    cloud->pcl.count = 0;
     cloud->position.clear();
     cloud->rgb.clear();
-
     cloud->pcl.max.x = -999999;
     cloud->pcl.max.y = -999999;
     cloud->pcl.max.z = -999999;
@@ -191,9 +194,9 @@ VR_Window::read_socket_connection()
         position.z = dataPack[idx*3+2];
 
         uint3 rgb;
-        rgb.x = dataPackColor[idx*3+2];
+        rgb.x = dataPackColor[idx*3];
         rgb.y = dataPackColor[idx*3+1];
-        rgb.z = dataPackColor[idx*3];
+        rgb.z = dataPackColor[idx*3+2];
 
         if ( position.x > cloud->world.min.x && position.x < cloud->world.max.x
              && position.y > cloud->world.min.y && position.y < cloud->world.max.y
@@ -212,15 +215,16 @@ VR_Window::read_socket_connection()
             cloud->rgb.push_back(rgb);
         }
     }
-    printf("\n %d points read from file", cloud->pcl.count );
+    //printf("\n %d points read from socket. Sizes: %lu, %lu", numItem, cloud->position.size(), cloud->rgb.size() );
+    cloud->pcl.count = cloud->position.size();
 
-    printf("\n PCList Maximum: %f %f %f", cloud->pcl.max.x, cloud->pcl.max.y, cloud->pcl.max.z );
-    printf("\n PCList Minimum: %f %f %f", cloud->pcl.min.x, cloud->pcl.min.y, cloud->pcl.min.z );
+    //printf("\n PCList Maximum: %f %f %f", cloud->pcl.max.x, cloud->pcl.max.y, cloud->pcl.max.z );
+    //printf("\n PCList Minimum: %f %f %f", cloud->pcl.min.x, cloud->pcl.min.y, cloud->pcl.min.z );
 
     cloud->pcl.dimension.x = abs( cloud->pcl.max.x - cloud->pcl.min.x );
     cloud->pcl.dimension.y = abs( cloud->pcl.max.y - cloud->pcl.min.y );
     cloud->pcl.dimension.z = abs( cloud->pcl.max.z - cloud->pcl.min.z );
-    printf("\n PCList Dimensions: %f %f %f\n", cloud->pcl.dimension.x, cloud->pcl.dimension.y, cloud->pcl.dimension.z );
+    //printf("\n PCList Dimensions: %f %f %f\n", cloud->pcl.dimension.x, cloud->pcl.dimension.y, cloud->pcl.dimension.z );
 
     delete [] dataPack;
     delete [] dataPackColor;
@@ -242,7 +246,6 @@ VR_Window::open_socket_connection()
 
     tcp_instruction[0] = COMMAND_ACK;
     tcp_instruction[1] = 0;
-
     server_socket->write_server_socket( tcp_instruction, 2*sizeof(int) );
 
     read_socket_connection();
@@ -392,29 +395,53 @@ VR_Window::render_motion_notify_event(GdkEventMotion *event)
 }
 
 
+void
+VR_Window::update_socket_data()
+{
+    timespec start, end;
+    clock_gettime(CLOCK_REALTIME, &start);
+
+    read_socket_connection();
+    vrender->update_color_maps( cloud );
+
+    clock_gettime(CLOCK_REALTIME, &end);
+    socket_timer[socket_timer_idx] = (((end.tv_nsec - start.tv_nsec) / 1000) / 1000);
+
+    double stime = 0;
+    double scount = 1;
+    for (uint f = 0; f < TIMER_SIZE; f++)
+        if (socket_timer[f] > 0)
+        {
+            stime += socket_timer[f];
+            scount++;
+        }
+
+    char socket_text[16];
+    sprintf(socket_text,"%f", stime / scount );
+    socket_update.set_text(socket_text);
+    socket_timer_idx = (socket_timer_idx + 1) % TIMER_SIZE;
+}
+
+void
+VR_Window::on_click()
+{
+    // TCP
+    update_socket_data();
+    update_render_buffer();
+}
 bool
 VR_Window::on_timer()
 {
     // TCP
-    bool client_ready = server_socket->check_for_available_data();
-
-    if (client_ready)
-    {
-        read_socket_connection();
-        vrender->update_color_maps( cloud );
-    }
+    update_socket_data();
+    update_render_buffer();
 }
 bool
 VR_Window::on_idle()
 {
     // TCP
-    bool client_ready = server_socket->check_for_available_data();
-
-    if (client_ready)
-    {
-        read_socket_connection();
-        vrender->update_color_maps( cloud );
-    }
+    update_socket_data();
+    update_render_buffer();
 }
 
 
@@ -476,20 +503,27 @@ VR_Window::create_render_window()
     render_scroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_ALWAYS);
     render_scroll->add(render_eventbox[0]);
 
-    fps_label.set_text("Refresh rate (fps):");
+    fps_label.set_text("Render rate (ms per ray-tracing):");
     fps_update.set_text("...");
-
     fps_box.set_orientation( Gtk::ORIENTATION_HORIZONTAL );
     fps_box.set_border_width(0);
     fps_box.pack_start( fps_label, false, false, 2 );
     fps_box.pack_start( fps_update, false, false, 2);
     render_vbox->pack_start( fps_box,  false, false, 2);
 
+    socket_label.set_text("Update rate (ms per socket transfer):");
+    socket_update.set_text("...");
+    socket_box.set_orientation( Gtk::ORIENTATION_HORIZONTAL );
+    socket_box.set_border_width(0);
+    socket_box.pack_start( socket_label, false, false, 2 );
+    socket_box.pack_start( socket_update, false, false, 2);
+    render_vbox->pack_start( socket_box,  false, false, 2);
+
     render_vbox->pack_start(render_scroll[0], true, true, 0);
 
     //////////// CREATE SLIDERS
     param_hbox1 = new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 1);
-    dens_label = new Gtk::Label("Density: ");
+    dens_label = new Gtk::Label("Opacity: ");
     param_hbox1->pack_start(dens_label[0], false, false, 0);
     dens_adjust = Gtk::Adjustment::create( vrender->get_density(), 0, 1.1, 0.01, 0.1, 0.1);
     dens_adjust->signal_value_changed().connect( sigc::mem_fun( *this, &VR_Window::set_render_density) );
@@ -524,8 +558,13 @@ VR_Window::create_render_window()
     param_hbox2->pack_start(scale_scale[0], true, true, 0);
     render_vbox->pack_start(param_hbox2[0], false, false, 0);
 
-    Glib::signal_idle().connect( sigc::mem_fun( *this, &VR_Window::on_idle) );
-    //Glib::signal_timeout().connect( sigc::mem_fun(*this, &VR_Window::on_timer), 50 );
+    /*Gtk::Button *update_frame_button;
+    update_frame_button = new Gtk::Button(" Update Frame ", true);
+    update_frame_button->signal_clicked().connect( sigc::mem_fun(*this, &VR_Window::on_click) );
+    render_vbox->pack_start( update_frame_button[0], false, true, 0 );*/
+
+    //Glib::signal_idle().connect( sigc::mem_fun( *this, &VR_Window::on_idle) );
+    Glib::signal_timeout().connect( sigc::mem_fun(*this, &VR_Window::on_timer), 500 );
 
     pack_start(render_vbox[0], true, true, 0);
     show_all_children();

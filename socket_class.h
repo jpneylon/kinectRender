@@ -15,7 +15,7 @@
 
 #define COMMAND_ACK             3
 #define MESSAGE_SIZE            32
-#define MAX_DATA_PACKET_SIZE    16384
+#define MAX_DATA_PACKET_SIZE    32768
 #define PORTNO_BASE             51717
 
 
@@ -214,7 +214,7 @@ class CS_Socket
                 }
                 loops++;
             }
-            printf("\n %lu Copies - %lu Bytes Received.\n",loops,bytes);
+            //printf("\n %d Copies - %d Bytes Received.\n",loops,bytes);
             delete [] buffer;
         }
 
